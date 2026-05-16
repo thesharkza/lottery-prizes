@@ -26,7 +26,7 @@ else:
     st.success(f"เชื่อมต่อฐานข้อมูลสำเร็จ! พบข้อมูลทั้งหมด {len(data)} งวด")
     
     # แปลงข้อมูล JSON ให้อยู่ในรูปแบบตาราง (Table)
-    df_list =  # <--- เติมวงเล็บก้ามปู ตรงนี้ครับ
+    df_list =  ``
     
     for d in data:
         prizes = d.get("prizes", {})
