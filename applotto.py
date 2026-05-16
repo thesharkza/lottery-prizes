@@ -1,47 +1,72 @@
-import streamlit as st
+import os
+import requests
 import pymongo
-import pandas as pd
-import certifi  # 1. เพิ่มบรรทัดนี้
+import certifi
+from datetime import datetime
 
-st.set_page_config(page_title="Thai Lotto Analytics", layout="wide")
+# 1. ดึงข้อมูลการเชื่อมต่อจาก Environment Variable ที่ GitHub ส่งมาให้
+MONGO_URI = os.environ.get("MONGO_URI")
 
-@st.cache_resource
-def init_connection():
-    # 2. เพิ่ม tlsCAFile เพื่อแก้ปัญหา SSL/Timeout บนระบบ Cloud
-    return pymongo.MongoClient(st.secrets, tlsCAFile=certifi.where())
+if not MONGO_URI:
+    print("Error: ไม่พบ MONGO_URI กรุณาตรวจสอบการตั้งค่า Secrets ใน GitHub")
+    exit(1)
 
-client = init_connection()
+# 2. ตั้งค่าการเชื่อมต่อ MongoDB พร้อมเพิ่ม certifi ป้องกันปัญหา SSL
+client = pymongo.MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client["lottery_db"]
 collection = db["draws"]
 
-st.title("📊 แดชบอร์ดสถิติสลากกินแบ่งรัฐบาล")
-
-# ค้นหาข้อมูลทั้งหมดจาก MongoDB และจัดเรียงจากงวดล่าสุดไปเก่าสุด
-cursor = collection.find().sort("_id", -1)
-data = list(cursor)
-
-if len(data) == 0:
-    st.warning("ยังไม่มีข้อมูลในระบบ รอให้ระบบอัปเดตข้อมูลสักครู่นะครับ")
-else:
-    st.success(f"เชื่อมต่อฐานข้อมูลสำเร็จ! พบข้อมูลทั้งหมด {len(data)} งวด")
+def fetch_and_save_latest_lotto():
+    print("กำลังดึงข้อมูลผลสลากกินแบ่งรัฐบาลงวดล่าสุด...")
     
-    # ใช้ list() แทนเพื่อป้องกันปัญหา SyntaxError
-    df_list = list()
-    
-    for d in data:
-        prizes = d.get("prizes", {})
+    # 3. ดึงข้อมูลจาก Rayriffy API
+    api_url = "https://lotto.api.rayriffy.com/latest"
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()
+        data = response.json()
         
-        # ใช้ list() เผื่อกรณีไม่มีข้อมูล
-        front = prizes.get("THREE_FRONT", list())
-        last = prizes.get("THREE_LAST", list())
-        
-        df_list.append({
-            "งวดวันที่": d.get("draw_date_str", "-"),
-            "รางวัลที่ 1": prizes.get("FIRST", "-"),
-            "เลขหน้า 3 ตัว": ", ".join(front) if isinstance(front, list) else str(front),
-            "เลขท้าย 3 ตัว": ", ".join(last) if isinstance(last, list) else str(last),
-            "เลขท้าย 2 ตัว": prizes.get("TWO_DIGIT", "-")
-        })
-    
-    df = pd.DataFrame(df_list)
-    st.dataframe(df, use_container_width=True)
+        if data.get("status") == "success":
+            response_data = data["response"]
+            
+            draw_date_str = response_data.get("date") 
+            prizes = response_data.get("prizes",)
+            running_numbers = response_data.get("runningNumbers",)
+            
+            first_prize = prizes["number"] if len(prizes) > 0 else
+            three_front = running_numbers["number"] if len(running_numbers) > 0 else
+            three_last = running_numbers[1]["number"] if len(running_numbers) > 1 else
+            two_bottom = running_numbers[2]["number"] if len(running_numbers) > 2 else
+
+            document = {
+                "draw_date_str": draw_date_str,
+                "timestamp": datetime.utcnow(),
+                "prizes": {
+                    "FIRST": first_prize,
+                    "TWO_DIGIT": two_bottom,
+                    "THREE_FRONT": three_front,
+                    "THREE_LAST": three_last
+                }
+            }
+
+            # 4. บันทึกลง MongoDB
+            result = collection.update_one(
+                {"draw_date_str": draw_date_str},
+                {"$set": document},
+                upsert=True
+            )
+            
+            if result.upserted_id:
+                print(f"บันทึกข้อมูลสำเร็จ! เพิ่มงวดใหม่: {draw_date_str}")
+            else:
+                print(f"อัปเดตข้อมูลสำเร็จ! (มีงวด {draw_date_str} ในระบบแล้ว)")
+        else:
+            print("ไม่สามารถดึงข้อมูลได้: สถานะ API ไม่สำเร็จ")
+            exit(1)
+            
+    except Exception as e:
+        print(f"เกิดข้อผิดพลาด: {e}")
+        exit(1)
+
+if __name__ == "__main__":
+    fetch_and_save_latest_lotto()
