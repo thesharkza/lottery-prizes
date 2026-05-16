@@ -7,7 +7,7 @@ st.set_page_config(page_title="Thai Lotto Analytics", layout="wide")
 # ดึงข้อมูลการเชื่อมต่อจาก Streamlit Secrets
 @st.cache_resource
 def init_connection():
-    # ระบุชื่อ Secret ที่เราตั้งไว้ให้ชัดเจน
+    # ต้องระบุคีย์ ให้ตรงกับที่เราตั้งไว้ใน Secrets
     return pymongo.MongoClient(st.secrets)
 
 client = init_connection()
