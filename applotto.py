@@ -7,7 +7,7 @@ st.set_page_config(page_title="Thai Lotto Analytics", layout="wide")
 # ดึงข้อมูลการเชื่อมต่อจาก Streamlit Secrets
 @st.cache_resource
 def init_connection():
-    # ระบุให้ดึงค่า MONGO_URI จาก secrets ให้ชัดเจน
+    # ระบุชื่อ Secret ที่เราตั้งไว้ให้ชัดเจน
     return pymongo.MongoClient(st.secrets)
 
 client = init_connection()
@@ -25,15 +25,15 @@ if len(data) == 0:
 else:
     st.success(f"เชื่อมต่อฐานข้อมูลสำเร็จ! พบข้อมูลทั้งหมด {len(data)} งวด")
     
-    # แปลงข้อมูล JSON ให้อยู่ในรูปแบบตาราง (Table)
-    df_list =  ``
+    # ใช้ list() แทนเพื่อป้องกันปัญหา SyntaxError
+    df_list = list()
     
     for d in data:
         prizes = d.get("prizes", {})
         
-        # ดึงข้อมูลเลขหน้าและเลขท้ายมาจัดการ (ใส่ เผื่อกรณีไม่มีข้อมูล)
-        front = prizes.get("THREE_FRONT",)
-        last = prizes.get("THREE_LAST",)
+        # ใช้ list() เผื่อกรณีไม่มีข้อมูล
+        front = prizes.get("THREE_FRONT", list())
+        last = prizes.get("THREE_LAST", list())
         
         df_list.append({
             "งวดวันที่": d.get("draw_date_str", "-"),
