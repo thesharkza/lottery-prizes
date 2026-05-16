@@ -1,30 +1,70 @@
-name: Auto Update Lottery Data
+import os
+import requests
+import pymongo
+import certifi
+from datetime import datetime
 
-on:
-  schedule:
-    # ตั้งเวลาให้รันทุกวันที่ 1 และ 16 ของทุกเดือน เวลา 09:30 UTC (ซึ่งตรงกับ 16:30 น. เวลาไทย ผลหวยออกครบพอดี)
-    - cron: '30 9 1,16 * *'
-  workflow_dispatch: # ปุ่มนี้อนุญาตให้เรากดสั่งรันด้วยมือได้เองผ่านหน้าเว็บ GitHub
+# ดึงข้อมูลการเชื่อมต่อจาก Environment Variable ที่ GitHub ส่งมาให้
+MONGO_URI = os.environ.get("MONGO_URI")
 
-jobs:
-  update-data:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.10'
-          
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests pymongo
-          
-      - name: Run updater script
-        env:
-          # ส่งรหัสผ่านฐานข้อมูลจาก GitHub Secrets ไปให้ Python
-          MONGO_URI: ${{ secrets.MONGO_URI }}
-        run: python updater.py
+if not MONGO_URI:
+    print("Error: ไม่พบ MONGO_URI กรุณาตรวจสอบการตั้งค่า Secrets ใน GitHub")
+    exit(1)
+
+# ตั้งค่าการเชื่อมต่อ MongoDB พร้อมเพิ่ม certifi ป้องกันปัญหา SSL
+client = pymongo.MongoClient(MONGO_URI, tlsCAFile=certifi.where())
+db = client["lottery_db"]
+collection = db["draws"]
+
+def fetch_and_save_latest_lotto():
+    print("กำลังดึงข้อมูลผลสลากกินแบ่งรัฐบาลงวดล่าสุด...")
+    
+    api_url = "https://lotto.api.rayriffy.com/latest"
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("status") == "success":
+            response_data = data["response"]
+            
+            draw_date_str = response_data.get("date") 
+            prizes = response_data.get("prizes",)
+            running_numbers = response_data.get("runningNumbers",)
+            
+            first_prize = prizes["number"] if len(prizes) > 0 else "-"
+            three_front = running_numbers["number"] if len(running_numbers) > 0 else "-"
+            three_last = running_numbers[1]["number"] if len(running_numbers) > 1 else "-"
+            two_bottom = running_numbers[2]["number"] if len(running_numbers) > 2 else "-"
+
+            document = {
+                "draw_date_str": draw_date_str,
+                "timestamp": datetime.utcnow(),
+                "prizes": {
+                    "FIRST": first_prize,
+                    "TWO_DIGIT": two_bottom,
+                    "THREE_FRONT": three_front,
+                    "THREE_LAST": three_last
+                }
+            }
+
+            result = collection.update_one(
+                {"draw_date_str": draw_date_str},
+                {"$set": document},
+                upsert=True
+            )
+            
+            if result.upserted_id:
+                print(f"บันทึกข้อมูลสำเร็จ! เพิ่มงวดใหม่: {draw_date_str}")
+            else:
+                print(f"อัปเดตข้อมูลสำเร็จ! (มีงวด {draw_date_str} ในระบบแล้ว)")
+        else:
+            print("ไม่สามารถดึงข้อมูลได้: สถานะ API ไม่สำเร็จ")
+            exit(1)
+            
+    except Exception as e:
+        print(f"เกิดข้อผิดพลาด: {e}")
+        exit(1)
+
+if __name__ == "__main__":
+    fetch_and_save_latest_lotto()
