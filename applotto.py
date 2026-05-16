@@ -1,14 +1,14 @@
 import streamlit as st
 import pymongo
 import pandas as pd
+import certifi  # 1. เพิ่มบรรทัดนี้
 
 st.set_page_config(page_title="Thai Lotto Analytics", layout="wide")
 
-# ดึงข้อมูลการเชื่อมต่อจาก Streamlit Secrets
 @st.cache_resource
 def init_connection():
-    # ต้องดึงค่าคีย์ "MONGO_URI" ออกมาให้ชัดเจน
-    return pymongo.MongoClient(st.secrets)
+    # 2. เพิ่ม tlsCAFile เพื่อแก้ปัญหา SSL/Timeout บนระบบ Cloud
+    return pymongo.MongoClient(st.secrets, tlsCAFile=certifi.where())
 
 client = init_connection()
 db = client["lottery_db"]
