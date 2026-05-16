@@ -86,7 +86,7 @@ def get_flat_series(dataframe, column_name):
 df = load_all_lottery_data()
 
 st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>📊 ระบบคำนวณและวิเคราะห์สถิติสลากกินแบ่งรัฐบาล</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #6B7280;'>แดชบอร์ดตัดสินใจเชิงสถิติศาสตร์ ประมวลผลแยกประเภทตัวเลขด้วยโมเดลคณิตศาสตร์ขั้นสูง 7 รูปแบบ</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #6B7280;'>แดชบอร์ดตัดสินใจเชิงสถิติศาสตร์ ผสานพลังกรรมการ 7 โมเดลคณิตศาสตร์ สรุปมติเอกฉันท์</p>", unsafe_allow_html=True)
 
 if df.empty:
     st.warning("⚠️ ไม่พบข้อมูลในฐานข้อมูล MongoDB ของคุณ กรุณารันไฟล์ seed_history.py เพื่อนำเข้าสถิติย้อนหลังก่อนครับ")
@@ -157,8 +157,6 @@ else:
                 with sc3:
                     st.write("**ความถี่ของ หลักหน่วย (0-9)**")
                     st.bar_chart(pd.Series(units).value_counts().sort_index())
-        else:
-            st.info("ไม่มีข้อมูลเพียงพอในการประมวลผลหมวดหมู่นี้")
 
     with tab2:
         st.header("📅 วิเคราะห์แนวโน้มจำเพาะเจาะจงเดือน")
@@ -185,8 +183,7 @@ else:
                 st.dataframe(m_top_df, use_container_width=True)
 
     with tab3:
-        st.header("🔮 แดชบอร์ดคำนวณและวิเคราะห์ตัวเลือกด้วยโมเดลคณิตศาสตร์ขั้นสูง")
-        st.write("ระบบทำการคำนวณแยกอัลกอริทึมตามทฤษฎีสถิติศาสตร์ 7 รูปแบบ เพื่อประกอบการตัดสินใจกรองตัวเลขที่มีน้ำหนักน่าจะเป็นสูงสุด")
+        st.header("🔮 แดชบอร์ดผสานพลังโมเดลคณิตศาสตร์และมติเอกฉันท์รวม")
         
         f_col1, f_col2 = st.columns(2)
         with f_col1:
@@ -206,22 +203,25 @@ else:
             for idx, val in enumerate(cat_flat_data):
                 last_seen_idx[str(val)] = idx
                 
-            # --- 1. คำนวณทฤษฎีของเบย์ (Bayes' Theorem) ---
+            # สร้างระบบนับคะแนนโหวต (Consensus Voting System) - เต็มก้อนละ 10 แต้มสำหรับที่ 1
+            voting_scores = {n: 0 for n in all_possible_nums}
+            
+            # --- 1. สูตรเบย์ ---
             df_m = df[df['เดือน'] == target_month]
             m_flat = get_flat_series(df_m, formula_cat)
             total_m_items = len(m_flat)
-            
             bayes_results = []
             for num in all_possible_nums:
                 p_num = cat_flat_data.value_counts().get(num, 0) / total_items_count if total_items_count > 0 else 0
                 p_num_given_m = m_flat.value_counts().get(num, 0) / total_m_items if total_m_items > 0 else 0
                 lift = (p_num_given_m / p_num) if p_num > 0 else 0
                 bayes_results.append((num, lift))
-                
             bayes_results.sort(key=lambda x: x[1], reverse=True)
             top_bayes = [f"{item[0]} (x{item[1]:.2f})" for item in bayes_results[:3]]
+            for rank, item in enumerate(bayes_results[:10]):
+                voting_scores[item[0]] += (10 - rank) # อันดับ 1 ได้ 10 คะแนน, อันดับ 10 ได้ 1 คะแนน
 
-            # --- 2. คำนวณการแจกแจงพัวซอง (Poisson Distribution) ---
+            # --- 2. สูตรพัวซอง ---
             poisson_results = []
             for num in all_possible_nums:
                 occurrences = cat_flat_data.value_counts().get(num, 0)
@@ -230,35 +230,38 @@ else:
                 overdue_draws = total_items_count - 1 - last_idx if last_idx != -1 else total_items_count
                 prob_to_appear = 1.0 - math.exp(-lam * (overdue_draws + 1)) if lam > 0 else 0
                 poisson_results.append((num, prob_to_appear))
-                
             poisson_results.sort(key=lambda x: x[1], reverse=True)
             top_poisson = [f"{item[0]} ({item[1]*100:.1f}%)" for item in poisson_results[:3]]
+            for rank, item in enumerate(poisson_results[:10]):
+                voting_scores[item[0]] += (10 - rank)
 
-            # --- 3. คำนวณการทดสอบไคสแควร์ (Chi-Square Anomaly) ---
+            # --- 3. สูตรไคสแควร์ ---
             expected_freq = total_items_count / total_possible_types
             chisq_results = []
             for num in all_possible_nums:
                 observed_freq = cat_flat_data.value_counts().get(num, 0)
                 chisq_contrib = ((observed_freq - expected_freq) ** 2) / expected_freq if expected_freq > 0 else 0
                 chisq_results.append((num, chisq_contrib if observed_freq > expected_freq else 0))
-                    
             chisq_results.sort(key=lambda x: x[1], reverse=True)
             top_chisq = [f"{item[0]} (เด่น: {item[1]:.2f})" for item in chisq_results[:3]]
+            for rank, item in enumerate(chisq_results[:10]):
+                voting_scores[item[0]] += (10 - rank)
 
-            # --- 4. การถอยกลับสู่ค่าเฉลี่ย (Regression to the Mean) ---
+            # --- 4. สูตรการถอยกลับสู่ค่าเฉลี่ย ---
             regression_results = []
             theoretical_period = total_possible_types
             for num in all_possible_nums:
                 last_idx = last_seen_idx.get(num, -1)
                 overdue_draws = total_items_count - 1 - last_idx if last_idx != -1 else total_items_count
                 overdue_index = overdue_draws / theoretical_period
-                regression_results.append((num, overdue_index, overdue_draws))
-                
+                regression_results.append((num, overdue_index))
             regression_results.sort(key=lambda x: x[1], reverse=True)
             top_regression = [f"{item[0]} ({item[1]:.2f} เท่า)" for item in regression_results[:3]]
+            for rank, item in enumerate(regression_results[:10]):
+                voting_scores[item[0]] += (10 - rank)
 
-            # --- 5. ห่วงโซ่มาร์คอฟ (Markov Chains - ตัวเลือกใหม่) ---
-            top_markov = []
+            # --- 5. ห่วงโซ่มาร์คอฟ ---
+            top_markov_list = []
             if len(cat_flat_data) > 1:
                 last_num_in_history = str(cat_flat_data.iloc[-1])
                 next_nums = []
@@ -267,11 +270,13 @@ else:
                         next_nums.append(str(cat_flat_data.iloc[i+1]))
                 if next_nums:
                     markov_counts = Counter(next_nums)
-                    top_markov = [f"{k}" for k, v in markov_counts.most_common(3)]
-            if not top_markov:
-                top_markov = ["- (ข้อมูลต่อไม่พอ)"]
+                    markov_sorted = markov_counts.most_common(10)
+                    top_markov_list = [f"{item[0]}" for item in markov_sorted[:3]]
+                    for rank, item in enumerate(markov_sorted):
+                        voting_scores[item[0]] += (10 - rank)
+            top_markov = top_markov_list if top_markov_list else ["-"]
 
-            # --- 6. ค่าน้ำหนักความเร่งเฉลี่ยเคลื่อนที่ (EMA Momentum - ตัวเลือกใหม่) ---
+            # --- 6. ค่าน้ำหนักความเร่งเฉลี่ย (EMA) ---
             alpha_decay = 0.05
             ema_scores = {n: 0.0 for n in all_possible_nums}
             for idx, val in enumerate(cat_flat_data):
@@ -281,8 +286,10 @@ else:
                     ema_scores[v_str] += alpha_decay * ((1 - alpha_decay) ** dist)
             ema_results = sorted(ema_scores.items(), key=lambda x: x[1], reverse=True)
             top_ema = [f"{item[0]} ({item[1]:.3f})" for item in ema_results[:3]]
+            for rank, item in enumerate(ema_results[:10]):
+                voting_scores[item[0]] += (10 - rank)
 
-            # --- 7. สมดุลผลรวมและพิกัดคู่คี่ (Digit Sum & Parity - ตัวเลือกใหม่) ---
+            # --- 7. สมดุลผลรวมและคู่คี่ ---
             def get_digit_sum(n_str):
                 return sum(int(c) for c in n_str if c.isdigit())
             def get_parity_pattern(n_str):
@@ -299,9 +306,23 @@ else:
                     balanced_nums.append((num, cat_flat_data.value_counts().get(num, 0)))
             balanced_nums.sort(key=lambda x: x[1], reverse=True)
             top_balanced = [f"{item[0]}" for item in balanced_nums[:3]]
+            for rank, item in enumerate(balanced_nums[:10]):
+                voting_scores[item[0]] += (10 - rank)
 
-            # --- ส่วนแสดงผล UI คาร์ดเปรียบเทียบการตัดสินใจ ---
+            # --- 🌟 ส่วนการประมวลผลระบบมติเอกฉันท์รวม (Consensus Winner) 🌟 ---
+            consensus_results = sorted(voting_scores.items(), key=lambda x: x[1], reverse=True)
+            top_master_consensus = [f"🎯 {item[0]} (คะแนนโหวตรวม: {item[1]} แต้ม)" for item in consensus_results[:5]]
+
+            # ---------------- DISPLAY UI ----------------
             st.write("---")
+            # โชว์ป้ายประกาศ Master Consensus ตัวใหญ่สุดยอดไว้บนสุดแผงตัดสินใจ
+            st.markdown(f"""<div style="background-color:#F8FAFC; padding:25px; border-radius:15px; border:3px solid #334155; text-align:center; margin-bottom:30px;">
+                <h2 style="color:#0F172A; margin-top:0; font-size:28px;">🎯 มติเอกฉันท์สูงสุดผสานพลัง 7 โมเดล (Ensemble Consensus Model)</h2>
+                <p style="color:#475569; font-size:15px; max-w:800px; margin:0 auto 15px auto;">นี่คือตัวเลือกที่มีคะแนนวิเคราะห์รวมสูงสุดจากระบบโหวตสถิติ โดยรวบรวมตัวเลขที่กรรมการทั้ง 7 สูตรคณิตศาสตร์ (Bayes, Poisson, Chi-Sq, Regression, Markov, EMA, Balanced) เห็นพ้องต้องกันว่ามีโครงสร้างสถิติสมบูรณ์ที่สุดสำหรับหมวด <b>{formula_cat}</b></p>
+                <div style="display:flex; justify-content:center; gap:15px; flex-wrap:wrap; font-size:20px; font-weight:bold; color:#1E3A8A;">
+                    {' &nbsp;|&nbsp; '.join(top_master_consensus)}
+                </div>
+            </div>""", unsafe_allow_html=True)
             
             # แถวที่ 1
             row1_c1, row1_c2 = st.columns(2)
@@ -337,7 +358,7 @@ else:
                     <p style="font-size:16px; font-weight:bold; color:#78350F;">{', '.join(top_regression)}</p>
                 </div>""", unsafe_allow_html=True)
 
-            # แถวที่ 3 (โมเดลใหม่)
+            # แถวที่ 3
             row3_c1, row3_c2 = st.columns(2)
             with row3_c1:
                 st.markdown(f"""<div style="background-color:#FAFAF9; padding:20px; border-radius:12px; border-left:6px solid #78716C; min-height:220px; margin-bottom:20px;">
@@ -354,7 +375,7 @@ else:
                     <p style="font-size:16px; font-weight:bold; color:#4C1D95;">{', '.join(top_ema)}</p>
                 </div>""", unsafe_allow_html=True)
 
-            # แถวที่ 4 (โมเดลใหม่)
+            # แถวที่ 4
             st.markdown(f"""<div style="background-color:#F0FDFA; padding:20px; border-radius:12px; border-left:6px solid #0D9488; min-height:160px; margin-bottom:20px;">
                 <h3 style="color:#0D9488; margin-top:0;">🎯 ตัวเลือก 7: สมดุลผลรวมหลักและพิกัดคู่-คี่ (Digit Sum & Parity Filter)</h3>
                 <p style="color:#4B5563; font-size:14px;">คัดกรองตัวเลขตามกฎ Normal Distribution โดยเลือกเฉพาะตัวเลขที่มีผลรวมแต้มหลัก (เช่น {', '.join([str(s) for s in top_3_sums])}) และโครงสร้างพิกัดรูปแบบ (<b>{most_common_parity}</b>) ที่สถิติประวัติศาสตร์ 30 ปีระบุว่าออกบ่อยที่สุด</p>
@@ -362,7 +383,7 @@ else:
                 <p style="font-size:16px; font-weight:bold; color:#115E59;">{', '.join(top_balanced)}</p>
             </div>""", unsafe_allow_html=True)
 
-            # ตารางรวมสรุป Metrics ทั้งหมด 7 อัลกorิธึม
+            # ตารางรวมสรุป Metrics ทั้งหมด 7 อัลกอริทึม + คะแนนโหวตรวม
             st.write("---")
             st.subheader(f"📋 แผ่นตารางดัชนีคะแนนรวมสำหรับการตัดสินใจเชิงคณิตศาสตร์ [{formula_cat}]")
             
@@ -370,7 +391,7 @@ else:
             bayes_dict = dict(bayes_results)
             poisson_dict = dict(poisson_results)
             chisq_dict = dict(chisq_results)
-            regr_dict = {item[0]: item[1] for item in regression_results}
+            regr_dict = dict(regression_results)
             overdue_dict = {item[0]: item[2] for item in regression_results}
             ema_dict = dict(ema_results)
             freq_dict = cat_flat_data.value_counts().to_dict()
@@ -378,6 +399,7 @@ else:
             for num in all_possible_nums:
                 summary_rows.append({
                     "ตัวเลข": num,
+                    "คะแนนโหวตรวม (Consensus)": voting_scores.get(num, 0),
                     "ออกทั้งหมด (ครั้ง)": freq_dict.get(num, 0),
                     "ค้างปัจจุบัน (งวด)": overdue_dict.get(num, 0),
                     "ดัชนีสูตรเบย์ (Lift)": round(bayes_dict.get(num, 0), 3),
@@ -389,7 +411,8 @@ else:
                     "พิกัดคู่-คี่": get_parity_pattern(num)
                 })
                 
-            st.dataframe(pd.DataFrame(summary_rows).sort_values(by="ออกทั้งหมด (ครั้ง)", ascending=False), use_container_width=True)
+            # เรียงตารางตามคะแนนโหวตมติเอกฉันท์จากมากไปน้อย เพื่อให้ง่ายต่อการดูภาพรวม
+            st.dataframe(pd.DataFrame(summary_rows).sort_values(by="คะแนนโหวตรวม (Consensus)", ascending=False), use_container_width=True)
         else:
             st.info("กำลังเตรียมโมเดลคำนวณข้อมูล...")
 
