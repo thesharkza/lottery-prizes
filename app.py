@@ -43,12 +43,27 @@ def load_all_lottery_data():
                     return ", ".join(val)
                 return str(val)
                 
+            first_prize = parse_value(prizes.get("FIRST", "-")).strip()
+            two_digit = parse_value(prizes.get("TWO_DIGIT", "-")).strip()
+            three_front = parse_value(prizes.get("THREE_FRONT", "-")).strip()
+            three_last = parse_value(prizes.get("THREE_LAST", "-")).strip()
+
+            # 🛠️ แยกประเภทกลุ่มย่อยตามเงื่อนไขของคุณ
+            if len(first_prize) == 6 and first_prize.isdigit():
+                last2_of_first = first_prize[-2:]
+                last3_of_first = first_prize[-3:]
+            else:
+                last2_of_first = "-"
+                last3_of_first = "-"
+                
             rows.append({
                 "งวดวันที่": doc.get("draw_date_str", "-"),
-                "รางวัลที่ 1": parse_value(prizes.get("FIRST", "-")),
-                "เลขท้าย 2 ตัว": parse_value(prizes.get("TWO_DIGIT", "-")),
-                "เลขหน้า 3 ตัว": parse_value(prizes.get("THREE_FRONT", "-")),
-                "เลขท้าย 3 ตัว": parse_value(prizes.get("THREE_LAST", "-")),
+                "รางวัลที่ 1": first_prize,
+                "เลขท้าย 2 ตัว": two_digit,
+                "เลข 2 ตัวท้ายรางวัลที่ 1": last2_of_first,
+                "เลขหน้า 3 ตัว": three_front,
+                "เลขท้าย 3 ตัว": three_last,
+                "เลข 3 ตัวท้ายรางวัลที่ 1": last3_of_first,
                 "timestamp": doc.get("timestamp")
             })
             
@@ -57,16 +72,27 @@ def load_all_lottery_data():
         st.error(f"เกิดข้อผิดพลาดในการโหลดข้อมูล: {e}")
         return pd.DataFrame()
 
+# ฟังก์ชันช่วยกระจายข้อมูลตัวเลข (เช่น "290, 742" ให้แยกนับเป็น "290" และ "742" อย่างถูกต้อง)
+def get_flat_series(dataframe, column_name):
+    all_items = []
+    for val in dataframe[column_name].dropna():
+        val_str = str(val).strip()
+        if val_str == "-":
+            continue
+        items = [i.strip() for i in val_str.split(",")]
+        all_items.extend([i for i in items if i and i != "-"])
+    return pd.Series(all_items)
+
 # โหลดข้อมูลเข้าสู่ตัวแปร DataFrame ของ Pandas
 df = load_all_lottery_data()
 
 st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>📊 ระบบคำนวณและวิเคราะห์สถิติสลากกินแบ่งรัฐบาล</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #6B7280;'>ประมวลผลความน่าจะเป็นทางคณิตศาสตร์จากสถิติมวลรวมย้อนหลังและปัจจุบัน</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #6B7280;'>โปรแกรมคำนวณความน่าจะเป็นแยกประเภทตัวเลขอย่างละเอียดจากคลังประวัติศาสตร์</p>", unsafe_allow_html=True)
 
 if df.empty:
     st.warning("⚠️ ไม่พบข้อมูลในฐานข้อมูล MongoDB ของคุณ กรุณารันไฟล์ seed_history.py เพื่อนำเข้าสถิติย้อนหลังก่อนครับ")
 else:
-    # สกัดชื่อเดือนภาษาไทยออกมาจากข้อความวันที่ (เช่น "16 พฤษภาคม 2539")
+    # สกัดชื่อเดือนภาษาไทยออกมาจากข้อความวันที่
     def get_thai_month(date_text):
         parts = str(date_text).split()
         return parts[1] if len(parts) >= 2 else "ไม่ระบุ"
@@ -74,19 +100,19 @@ else:
     df['เดือน'] = df['งวดวันที่'].apply(get_thai_month)
     
     # เมนูด้านข้างแสดงประวัติภาพรวม ข้อมูลสะสม
-    st.sidebar.header("🗂️ คลังข้อมูลดิบ")
-    st.sidebar.metric(label="จำนวนงวดสะสมทั้งหมดในระบบ", value=f"{len(df)} งวด")
-    st.sidebar.write(f"📅 ประวัติตั้งแต่งวด: `{df['งวดวันที่'].iloc[0]}`")
+    st.sidebar.header("🗂️ คลังข้อมูลสะสม")
+    st.sidebar.metric(label="จำนวนงวดสะสมในระบบ", value=f"{len(df)} งวด")
+    st.sidebar.write(f"📅 เริ่มตั้งแต่งวด: `{df['งวดวันที่'].iloc[0]}`")
     st.sidebar.write(f"📅 ถึงงวดล่าสุด: `{df['งวดวันที่'].iloc[-1]}`")
     
-    # เตรียมข้อมูลสำหรับคำนวณหลักสิบและหลักหน่วยไว้ล่วงหน้า
-    df_clean = df[df['เลขท้าย 2 ตัว'] != "-"]
-    tens, units = [], []
-    for num in df_clean['เลขท้าย 2 ตัว']:
-        cleaned_num = str(num).strip()
-        if len(cleaned_num) == 2 and cleaned_num.isdigit():
-            tens.append(int(cleaned_num[0]))
-            units.append(int(cleaned_num[1]))
+    # รายชื่อประเภทตัวเลขทั้ง 5 กลุ่มตามที่ผู้ใช้กำหนด
+    categories = [
+        "เลขท้าย 2 ตัว", 
+        "เลข 2 ตัวท้ายรางวัลที่ 1", 
+        "เลขหน้า 3 ตัว", 
+        "เลขท้าย 3 ตัว", 
+        "เลข 3 ตัวท้ายรางวัลที่ 1"
+    ]
 
     # แบ่งหน้าแสดงผลออกเป็น 4 แท็บสำหรับการวิเคราะห์รูปแบบต่างๆ
     tab1, tab2, tab3, tab4 = st.tabs(["🎯 สถิติความถี่มวลรวม", "📅 สถิติเจาะลึกรายเดือน", "🔮 สูตรคำนวณแนวโน้มงวดถัดไป", "📋 ตารางประวัติทั้งหมด"])
@@ -94,101 +120,153 @@ else:
     with tab1:
         st.header("🎯 อันดับตัวเลขที่ออกบ่อยที่สุด (Frequency Analysis)")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("🔝 เลขท้าย 2 ตัวที่ออกบ่อยที่สุด (Top 10)")
-            if not df_clean.empty:
-                top_10_two = df_clean['เลขท้าย 2 ตัว'].value_counts().head(10)
-                st.bar_chart(top_10_two)
-                
-                top_df = top_10_two.reset_index()
+        # ให้ผู้ใช้เลือกประเภทที่ต้องการวิเคราะห์ความถี่
+        selected_cat = st.selectbox("เลือกประเภทตัวเลขที่ต้องการดูสถิติ:", categories, key="tab1_cat")
+        flat_data = get_flat_series(df, selected_cat)
+        
+        if not flat_data.empty:
+            col1, col2 = st.columns([3, 2])
+            with col1:
+                st.subheader(f"🔝 แผนภูมิแท่ง {selected_cat} ที่ออกบ่อยที่สุด (Top 15)")
+                top_15 = flat_data.value_counts().head(15)
+                st.bar_chart(top_15)
+            with col2:
+                st.subheader("📋 ตารางอันดับแบบละเอียด")
+                top_df = flat_data.value_counts().reset_index()
                 top_df.columns = ["ตัวเลข", "จำนวนครั้งที่ออก"]
                 st.dataframe(top_df, use_container_width=True)
                 
-        with col2:
-            st.subheader("🔢 สถิติการออกแยกตามตำแหน่งหลัก")
-            if tens and units:
+            # ส่วนคำนวณสถิติแยกรายหลัก (หลักร้อย/หลักสิบ/หลักหน่วย) อัตโนมัติสอดคล้องกับประเภทตัวเลข
+            st.write("---")
+            st.subheader(f"🔢 สถิติความถี่แยกตามตำแหน่งหลักของ [{selected_cat}]")
+            
+            # ตรวจสอบความยาวตัวเลขว่าเป็นแบบ 2 หลัก หรือ 3 หลัก
+            sample_len = len(str(flat_data.iloc[0]))
+            
+            if sample_len == 2:
+                tens = [int(str(n)[0]) for n in flat_data if len(str(n)) == 2 and str(n).isdigit()]
+                units = [int(str(n)[1]) for n in flat_data if len(str(n)) == 2 and str(n).isdigit()]
+                
                 sc1, sc2 = st.columns(2)
                 with sc1:
-                    st.write("**สถิติความถี่ของ หลักสิบ (0-9)**")
+                    st.write("**ความถี่ของ หลักสิบ (0-9)**")
                     st.bar_chart(pd.Series(tens).value_counts().sort_index())
                 with sc2:
-                    st.write("**สถิติความถี่ของ หลักหน่วย (0-9)**")
+                    st.write("**ความถี่ของ หลักหน่วย (0-9)**")
                     st.bar_chart(pd.Series(units).value_counts().sort_index())
-            else:
-                st.write("ไม่มีข้อมูลตัวเลขที่สมบูรณ์พอในการแยกหลัก")
+            elif sample_len == 3:
+                hundreds = [int(str(n)[0]) for n in flat_data if len(str(n)) == 3 and str(n).isdigit()]
+                tens = [int(str(n)[1]) for n in flat_data if len(str(n)) == 3 and str(n).isdigit()]
+                units = [int(str(n)[2]) for n in flat_data if len(str(n)) == 3 and str(n).isdigit()]
+                
+                sc1, sc2, sc3 = st.columns(3)
+                with sc1:
+                    st.write("**ความถี่ของ หลักร้อย (0-9)**")
+                    st.bar_chart(pd.Series(hundreds).value_counts().sort_index())
+                with sc2:
+                    st.write("**ความถี่ของ หลักสิบ (0-9)**")
+                    st.bar_chart(pd.Series(tens).value_counts().sort_index())
+                with sc3:
+                    st.write("**ความถี่ของ หลักหน่วย (0-9)**")
+                    st.bar_chart(pd.Series(units).value_counts().sort_index())
+        else:
+            st.info("ไม่มีข้อมูลเพียงพอในการประมวลผลหมวดหมู่นี้")
 
     with tab2:
-        st.header("📅 วิเคราะห์แนวโน้มจำเพาะเดือน")
-        st.write("คัดกรองสถิติเพื่อดูว่าในการออกรางวัลย้อนหลัง 30 ปี ตัวเลขใดที่มักจะออกบ่อยในเดือนนั้นๆ เป็นพิเศษ")
+        st.header("📅 วิเคราะห์แนวโน้มจำเพาะเจาะจงเดือน")
+        st.write("คัดกรองข้อมูลสถิติ 30 ปี เพื่อดูพฤติกรรมการออกรางวัลที่มักจะเกิดซ้ำในเดือนนั้นๆ")
         
-        selected_month = st.selectbox("เลือกเดือนที่ต้องการเปิดสถิติ:", df['เดือน'].unique())
-        df_month = df[df['เดือน'] == selected_month]
+        m_col1, m_col2 = st.columns(2)
+        with m_col1:
+            selected_month = st.selectbox("เลือกเดือนที่ต้องการเปิดสถิติ:", df['เดือน'].unique())
+        with m_col2:
+            selected_month_cat = st.selectbox("เลือกประเภทตัวเลขที่ต้องการกรอง:", categories, key="tab2_cat")
+            
+        df_month = df[df['month'] == selected_month if 'month' in df else df['เดือน'] == selected_month]
+        month_flat_data = get_flat_series(df_month, selected_month_cat)
         
-        st.info(f"พบข้อมูลประวัติศาสตร์สลากที่เคยออกในเดือน **{selected_month}** ทั้งหมดจำนวน **{len(df_month)}** งวด")
+        st.info(f"พบประวัติศาสตร์สลากที่เคยออกในเดือน **{selected_month}** ทั้งหมดจำนวน **{len(df_month)}** งวด")
         
-        if not df_month.empty:
-            m_col1, m_col2 = st.columns(2)
-            with m_col1:
-                st.write(f"📊 **เลขท้าย 2 ตัวที่ถูกโฉลกกับเดือน {selected_month} (ออกบ่อยที่สุด)**")
-                df_m_two = df_month[df_month['เลขท้าย 2 ตัว'] != "-"]
-                if not df_m_two.empty:
-                    st.dataframe(df_m_two['เลขท้าย 2 ตัว'].value_counts().head(10), use_container_width=True)
-            with m_col2:
-                st.write(f"📊 **เลขท้ายรางวัลที่ 1 (สองตัวท้าย) ที่ออกบ่อยที่สุดในเดือน {selected_month}**")
-                df_m_first = df_month[df_month['รางวัลที่ 1'] != "-"]
-                if not df_m_first.empty:
-                    last_2_first = df_m_first['รางวัลที่ 1'].apply(lambda x: str(x)[-2:] if len(str(x))>=2 else None).dropna()
-                    if not last_2_first.empty:
-                        st.dataframe(last_2_first.value_counts().head(10), use_container_width=True)
+        if not month_flat_data.empty:
+            mc1, mc2 = st.columns([3, 2])
+            with mc1:
+                st.write(f"📊 **กราฟอันดับสถิติ {selected_month_cat} ที่ออกบ่อยที่สุดในเดือน {selected_month}**")
+                st.bar_chart(month_flat_data.value_counts().head(10))
+            with mc2:
+                st.write(f"📋 **ตารางอันดับเด่นประจำเดือน {selected_month}**")
+                m_top_df = month_flat_data.value_counts().reset_index()
+                m_top_df.columns = ["ตัวเลข", "จำนวนครั้งที่ออก"]
+                st.dataframe(m_top_df, use_container_width=True)
+        else:
+            st.write("ไม่มีข้อมูลตัวเลขในเดือนนี้")
 
     with tab3:
-        st.header("🔮 ระบบประมวลผลคำนวณแนวโน้มด้วยสมการสถิติ")
-        st.write("ใช้หลักคณิตศาสตร์สถิติวางโมเดลคำนวณชุดตัวเลขที่มีน้ำหนักน่าจะเป็นสูงสุดสำหรับงวดถัดไป")
+        st.header("🔮 ระบบประมวลผลและคำนวณเลขเด่นด้วยสมการสถิติ")
+        st.write("เลือกประเภทที่คุณต้องการให้โปรแกรมรันสูตรคณิตศาสตร์เพื่อหาแนวโน้มน้ำหนักตัวเลขงวดถัดไป")
         
-        c1, c2, c3 = st.columns(3)
+        formula_cat = st.selectbox("เลือกประเภทตัวเลขที่ต้องการให้โปรแกรมคำนวณ:", categories, key="tab3_cat")
+        cat_flat_data = get_flat_series(df, formula_cat)
         
-        with c1:
-            st.markdown("<div style='background-color:#FEF3C7; padding:20px; border-radius:10px; border-left:6px solid #D97706; min-height:220px;'>", unsafe_allow_html=True)
-            st.subheader("🔥 สูตรเลขเด่นยอดนิยม (Hot Numbers)")
-            st.write("คำนวณจากตัวเลขกลุ่มที่มีอัตราเร่งและสถิติการออกซ้ำสะสมสูงที่สุดในระบบ")
-            if not df_clean.empty:
-                hot_list = df_clean['เลขท้าย 2 ตัว'].value_counts().head(5).index.tolist()
-                st.markdown(f"<h2 style='color:#B45309;'>{', '.join(hot_list)}</h2>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+        if not cat_flat_data.empty:
+            # คำนวณหาความยาวตัวเลข (2 ตัว หรือ 3 ตัว) ของกลุ่มที่เลือก
+            sample_len = len(str(cat_flat_data.iloc[0]))
             
-        with c2:
-            st.markdown("<div style='background-color:#E0F2FE; padding:20px; border-radius:10px; border-left:6px solid #0284C7; min-height:220px;'>", unsafe_allow_html=True)
-            st.subheader("❄️ สูตรเลขค้างแผง (Cold/Due Numbers)")
-            st.write("คำนวณหาตัวเลขที่ไม่เคยออกเลย หรืออั้นไว้นานที่สุด ซึ่งมีโอกาสดีดกลับมาออกตามค่าเฉลี่ยสถิติ")
+            c1, c2, c3 = st.columns(3)
             
-            if not df_clean.empty:
-                all_nums = [f"{i:02d}" for i in range(100)]
-                last_seen_index = {}
-                for idx, row in df_clean.iterrows():
-                    last_seen_index[row['เลขท้าย 2 ตัว']] = idx
+            with c1:
+                st.markdown("<div style='background-color:#FEF3C7; padding:20px; border-radius:10px; border-left:6px solid #D97706; min-height:240px;'>", unsafe_allow_html=True)
+                st.subheader("🔥 สูตรเลขเด่นยอดนิยม (Hot Numbers)")
+                st.write(f"คำนวณจากชุดตัวเลข {formula_cat} ที่มีอัตราเร่งและการออกซ้ำสะสมสูงที่สุดในประวัติศาสตร์")
+                hot_list = cat_flat_data.value_counts().head(5).index.tolist()
+                st.markdown(f"<h2 style='color:#B45309; letter-spacing: 2px;'>{', '.join(hot_list)}</h2>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
                 
-                cold_scores = [(n, last_seen_index.get(n, -1)) for n in all_nums]
-                cold_scores.sort(key=lambda x: x[1])
+            with c2:
+                st.markdown("<div style='background-color:#E0F2FE; padding:20px; border-radius:10px; border-left:6px solid #0284C7; min-height:240px;'>", unsafe_allow_html=True)
+                st.subheader("❄️ สูตรเลขค้างแผง (Cold Numbers)")
+                st.write(f"คำนวณหาตัวเลขในหมวด {formula_cat} ที่อั้นไว้นานที่สุดหรือออกน้อยที่สุด ซึ่งมีแนวโน้มดีดกลับตามกฎค่าเฉลี่ยสถิติ")
+                
+                # สร้างเลขทั้งหมดที่เป็นไปได้ (00-99 หรือ 000-999)
+                all_possible_nums = [f"{i:02d}" if sample_len == 2 else f"{i:03d}" for i in range(100 if sample_len == 2 else 1000)]
+                
+                # หาจุดที่เจอครั้งล่าสุด
+                last_seen_dict = {}
+                for idx, val in cat_flat_data.items():
+                    last_seen_dict[str(val)] = idx
+                    
+                cold_scores = [(n, last_seen_dict.get(n, -1)) for n in all_possible_nums]
+                cold_scores.sort(key=lambda x: x[1]) # เรียงงวดเก่าไปใหม่ ตัวที่ไม่ออกนานสุดจะอยู่บน
                 cold_list = [item[0] for item in cold_scores[:5]]
-                st.markdown(f"<h2 style='color:#0369A1;'>{', '.join(cold_list)}</h2>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-        with c3:
-            st.markdown("<div style='background-color:#DCFCE7; padding:20px; border-radius:10px; border-left:6px solid #16A34A; min-height:220px;'>", unsafe_allow_html=True)
-            st.subheader("🎲 สูตรพิกัดหลักผสม (Probability Matrix)")
-            st.write("จับคู่สถิติโดยนำค่าฐานนิยม (Mode) ของหลักสิบที่ออกบ่อยที่สุด มาแมตช์เข้าคู่กับหลักหน่วยที่ออกบ่อยที่สุด")
-            
-            if not df_clean.empty and tens and units:
-                top_tens = [str(item[0]) for item in Counter(tens).most_common(2)]
-                top_units = [str(item[0]) for item in Counter(units).most_common(2)]
-                matrix_list = [f"{t}{u}" for t in top_tens for u in top_units]
-                st.markdown(f"<h2 style='color:#15803D;'>{', '.join(matrix_list)}</h2>", unsafe_allow_html=True)
-            else:
-                st.write("กำลังประมวลผลโมเดลความน่าจะเป็น...")
-            st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown(f"<h2 style='color:#0369A1; letter-spacing: 2px;'>{', '.join(cold_list)}</h2>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+            with c3:
+                st.markdown("<div style='background-color:#DCFCE7; padding:20px; border-radius:10px; border-left:6px solid #16A34A; min-height:240px;'>", unsafe_allow_html=True)
+                st.subheader("🎲 สูตรพิกัดหลักผสม (Probability Matrix)")
+                st.write("วิเคราะห์แยกแต่ละตำแหน่ง (ร้อย/สิบ/หน่วย) นำตัวเลขที่มีค่าฐานนิยม (Mode) หรือออกบ่อยที่สุดของแต่ละหลักมาไขว้จับคู่กัน")
+                
+                if sample_len == 2:
+                    tens = [str(n)[0] for n in cat_flat_data if len(str(n))==2 and str(n).isdigit()]
+                    units = [str(n)[1] for n in cat_flat_data if len(str(n))==2 and str(n).isdigit()]
+                    top_tens = [item[0] for item in Counter(tens).most_common(2)]
+                    top_units = [item[0] for item in Counter(units).most_common(2)]
+                    matrix_list = [f"{t}{u}" for t in top_tens for u in top_units]
+                else:
+                    hundreds = [str(n)[0] for n in cat_flat_data if len(str(n))==3 and str(n).isdigit()]
+                    tens = [str(n)[1] for n in cat_flat_data if len(str(n))==3 and str(n).isdigit()]
+                    units = [str(n)[2] for n in cat_flat_data if len(str(n))==3 and str(n).isdigit()]
+                    top_h = [item[0] for item in Counter(hundreds).most_common(1)]
+                    top_t = [item[0] for item in Counter(tens).most_common(2)]
+                    top_u = [item[0] for item in Counter(units).most_common(2)]
+                    matrix_list = [f"{h}{t}{u}" for h in top_h for t in top_t for u in top_u]
+                    
+                st.markdown(f"<h2 style='color:#15803D; letter-spacing: 2px;'>{', '.join(matrix_list)}</h2>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info("กำลังเตรียมโมเดลข้อมูล...")
 
     with tab4:
-        st.header("📋 คลังข้อมูลดิบทั้งหมดย้อนหลัง 30 ปี")
-        st.write("คุณสามารถใช้แถบค้นหา กรองงวดที่ต้องการ หรือกดปุ่มดาวน์โหลดข้อมูลทั้งหมดออกไปเป็นไฟล์ CSV ได้ผ่านตารางด้านล่างนี้")
-        st.dataframe(df.sort_values(by="timestamp", ascending=False), use_container_width=True)
+        st.header("📋 ตารางประวัติพร้อมจำแนกประเภททั้งหมด")
+        st.write("ตารางแสดงผลลัพธ์ข้อมูลดิบสถิติ 30 ปี โดยระบบได้ทำการแยกคอลัมน์พิเศษเพิ่มให้อัตโนมัติ เพื่อให้คุณสามารถค้นหา ตรวจสอบ หรือกรองดูพฤติกรรมตัวเลขได้อย่างสะดวก")
+        # แสดงตารางเรียงจากงวดล่าสุดย้อนลงไปอดีต
+        st.dataframe(df.sort_values(by="timestamp", ascending=False).drop(columns=['timestamp'], errors='ignore'), use_container_width=True)
