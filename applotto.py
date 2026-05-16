@@ -28,11 +28,16 @@ else:
     df_list =
     for d in data:
         prizes = d.get("prizes", {})
+        
+        # ดึงข้อมูลเลขหน้าและเลขท้ายมาจัดการ
+        front = prizes.get("THREE_FRONT",)
+        last = prizes.get("THREE_LAST",)
+        
         df_list.append({
             "งวดวันที่": d.get("draw_date_str", "-"),
             "รางวัลที่ 1": prizes.get("FIRST", "-"),
-            "เลขหน้า 3 ตัว": ", ".join(prizes.get("THREE_FRONT",)) if isinstance(prizes.get("THREE_FRONT"), list) else prizes.get("THREE_FRONT", "-"),
-            "เลขท้าย 3 ตัว": ", ".join(prizes.get("THREE_LAST",)) if isinstance(prizes.get("THREE_LAST"), list) else prizes.get("THREE_LAST", "-"),
+            "เลขหน้า 3 ตัว": ", ".join(front) if isinstance(front, list) else str(front),
+            "เลขท้าย 3 ตัว": ", ".join(last) if isinstance(last, list) else str(last),
             "เลขท้าย 2 ตัว": prizes.get("TWO_DIGIT", "-")
         })
     
