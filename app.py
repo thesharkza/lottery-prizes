@@ -86,7 +86,7 @@ def get_flat_series(dataframe, column_name):
 df = load_all_lottery_data()
 
 st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>📊 ระบบคำนวณและวิเคราะห์สถิติสลากกินแบ่งรัฐบาล</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #6B7280;'>แดชบอร์ดตัดสินใจเชิงสถิติศาสตร์ ประมวลผลแยกประเภทตัวเลขด้วยโมเดลคณิตศาสตร์ขั้นสูง</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #6B7280;'>แดชบอร์ดตัดสินใจเชิงสถิติศาสตร์ ประมวลผลแยกประเภทตัวเลขด้วยโมเดลคณิตศาสตร์ขั้นสูง 7 รูปแบบ</p>", unsafe_allow_html=True)
 
 if df.empty:
     st.warning("⚠️ ไม่พบข้อมูลในฐานข้อมูล MongoDB ของคุณ กรุณารันไฟล์ seed_history.py เพื่อนำเข้าสถิติย้อนหลังก่อนครับ")
@@ -186,7 +186,7 @@ else:
 
     with tab3:
         st.header("🔮 แดชบอร์ดคำนวณและวิเคราะห์ตัวเลือกด้วยโมเดลคณิตศาสตร์ขั้นสูง")
-        st.write("ระบบทำการคำนวณแยกอัลกอริทึมตามทฤษฎีสถิติศาสตร์ 4 รูปแบบ เพื่อประกอบการตัดสินใจกรองตัวเลขที่มีน้ำหนักน่าจะเป็นสูงสุด")
+        st.write("ระบบทำการคำนวณแยกอัลกอริทึมตามทฤษฎีสถิติศาสตร์ 7 รูปแบบ เพื่อประกอบการตัดสินใจกรองตัวเลขที่มีน้ำหนักน่าจะเป็นสูงสุด")
         
         f_col1, f_col2 = st.columns(2)
         with f_col1:
@@ -216,7 +216,7 @@ else:
                 p_num = cat_flat_data.value_counts().get(num, 0) / total_items_count if total_items_count > 0 else 0
                 p_num_given_m = m_flat.value_counts().get(num, 0) / total_m_items if total_m_items > 0 else 0
                 lift = (p_num_given_m / p_num) if p_num > 0 else 0
-                bayes_results.append((num, lift, m_flat.value_counts().get(num, 0)))
+                bayes_results.append((num, lift))
                 
             bayes_results.sort(key=lambda x: x[1], reverse=True)
             top_bayes = [f"{item[0]} (x{item[1]:.2f})" for item in bayes_results[:3]]
@@ -229,7 +229,7 @@ else:
                 last_idx = last_seen_idx.get(num, -1)
                 overdue_draws = total_items_count - 1 - last_idx if last_idx != -1 else total_items_count
                 prob_to_appear = 1.0 - math.exp(-lam * (overdue_draws + 1)) if lam > 0 else 0
-                poisson_results.append((num, prob_to_appear, overdue_draws))
+                poisson_results.append((num, prob_to_appear))
                 
             poisson_results.sort(key=lambda x: x[1], reverse=True)
             top_poisson = [f"{item[0]} ({item[1]*100:.1f}%)" for item in poisson_results[:3]]
@@ -240,13 +240,12 @@ else:
             for num in all_possible_nums:
                 observed_freq = cat_flat_data.value_counts().get(num, 0)
                 chisq_contrib = ((observed_freq - expected_freq) ** 2) / expected_freq if expected_freq > 0 else 0
-                if observed_freq > expected_freq:
-                    chisq_results.append((num, chisq_contrib, observed_freq))
+                chisq_results.append((num, chisq_contrib if observed_freq > expected_freq else 0))
                     
             chisq_results.sort(key=lambda x: x[1], reverse=True)
             top_chisq = [f"{item[0]} (เด่น: {item[1]:.2f})" for item in chisq_results[:3]]
 
-            # --- 4. กฎของจำนวนมากและการถอยกลับสู่ค่าเฉลี่ย (Regression to the Mean) ---
+            # --- 4. การถอยกลับสู่ค่าเฉลี่ย (Regression to the Mean) ---
             regression_results = []
             theoretical_period = total_possible_types
             for num in all_possible_nums:
@@ -258,51 +257,122 @@ else:
             regression_results.sort(key=lambda x: x[1], reverse=True)
             top_regression = [f"{item[0]} ({item[1]:.2f} เท่า)" for item in regression_results[:3]]
 
-            # --- ส่วนการสร้าง UI คาร์ดตัวเลือกการตัดสินใจ (แก้ไขบั๊กเพิ่มตัว f เรียบร้อย) ---
+            # --- 5. ห่วงโซ่มาร์คอฟ (Markov Chains - ตัวเลือกใหม่) ---
+            top_markov = []
+            if len(cat_flat_data) > 1:
+                last_num_in_history = str(cat_flat_data.iloc[-1])
+                next_nums = []
+                for i in range(len(cat_flat_data) - 1):
+                    if str(cat_flat_data.iloc[i]) == last_num_in_history:
+                        next_nums.append(str(cat_flat_data.iloc[i+1]))
+                if next_nums:
+                    markov_counts = Counter(next_nums)
+                    top_markov = [f"{k}" for k, v in markov_counts.most_common(3)]
+            if not top_markov:
+                top_markov = ["- (ข้อมูลต่อไม่พอ)"]
+
+            # --- 6. ค่าน้ำหนักความเร่งเฉลี่ยเคลื่อนที่ (EMA Momentum - ตัวเลือกใหม่) ---
+            alpha_decay = 0.05
+            ema_scores = {n: 0.0 for n in all_possible_nums}
+            for idx, val in enumerate(cat_flat_data):
+                v_str = str(val)
+                if v_str in ema_scores:
+                    dist = total_items_count - 1 - idx
+                    ema_scores[v_str] += alpha_decay * ((1 - alpha_decay) ** dist)
+            ema_results = sorted(ema_scores.items(), key=lambda x: x[1], reverse=True)
+            top_ema = [f"{item[0]} ({item[1]:.3f})" for item in ema_results[:3]]
+
+            # --- 7. สมดุลผลรวมและพิกัดคู่คี่ (Digit Sum & Parity - ตัวเลือกใหม่) ---
+            def get_digit_sum(n_str):
+                return sum(int(c) for c in n_str if c.isdigit())
+            def get_parity_pattern(n_str):
+                return "-".join(["คี่" if int(c) % 2 != 0 else "คู่" for c in n_str if c.isdigit()])
+
+            hist_sums = [get_digit_sum(str(n)) for n in cat_flat_data]
+            hist_parities = [get_parity_pattern(str(n)) for n in cat_flat_data]
+            top_3_sums = [item[0] for item in Counter(hist_sums).most_common(3)]
+            most_common_parity = Counter(hist_parities).most_common(1)[0][0] if hist_parities else ""
+
+            balanced_nums = []
+            for num in all_possible_nums:
+                if get_digit_sum(num) in top_3_sums and get_parity_pattern(num) == most_common_parity:
+                    balanced_nums.append((num, cat_flat_data.value_counts().get(num, 0)))
+            balanced_nums.sort(key=lambda x: x[1], reverse=True)
+            top_balanced = [f"{item[0]}" for item in balanced_nums[:3]]
+
+            # --- ส่วนแสดงผล UI คาร์ดเปรียบเทียบการตัดสินใจ ---
             st.write("---")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown(f"""<div style='background-color:#F0FDF4; padding:20px; border-radius:12px; border-left:6px solid #16A34A; min-height:260px; margin-bottom:20px;'>
-                    <h3 style='color:#16A34A; margin-top:0;'>📅 ตัวเลือก 1: ตามเงื่อนไขเดือน (Bayes' Theorem Model)</h3>
-                    <p style='color:#4B5563; font-size:14px;'>วิเคราะห์โดยหา <b>Lift Factor</b> ดึงตัวเลขที่มีแนวโน้มพุ่งสูงขึ้นแบบมีเงื่อนไข เจาะจงเฉพาะเมื่อเข้าสู่เดือน <b>{target_month}</b> โดยเทียบจากฐานเฉลี่ยตลอดทั้งปี</p>
-                    <h4 style='color:#15803D; margin-bottom:5px;'>🔝 อันดับตัวเลขแนะนำสูงสุด:</h4>
-                    <p style='font-size:16px; font-weight:bold; color:#14532D;'>{', '.join(top_bayes)}</p>
+            
+            # แถวที่ 1
+            row1_c1, row1_c2 = st.columns(2)
+            with row1_c1:
+                st.markdown(f"""<div style="background-color:#F0FDF4; padding:20px; border-radius:12px; border-left:6px solid #16A34A; min-height:220px; margin-bottom:20px;">
+                    <h3 style="color:#16A34A; margin-top:0;">📅 ตัวเลือก 1: ตามเงื่อนไขเดือน (Bayes' Theorem)</h3>
+                    <p style="color:#4B5563; font-size:14px;">คัดเลขที่มีตัวเร่งน้ำหนักความน่าจะเป็นพุ่งสูงขึ้นเป็นพิเศษ เมื่อระบุเงื่อนไขเฉพาะเจาะจงว่าเข้าสู่เดือน <b>{target_month}</b></p>
+                    <h4 style="color:#15803D; margin-bottom:5px;">🔝 อันดับแนะนำสูงสุด:</h4>
+                    <p style="font-size:16px; font-weight:bold; color:#14532D;">{', '.join(top_bayes)}</p>
                 </div>""", unsafe_allow_html=True)
-                
-                # 🛠️ จุดที่แก้ไข: เพิ่มตัว 'f' ที่หน้าเครื่องหมายคำพูดเรียบร้อยแล้ว
-                st.markdown(f"""<div style='background-color:#FEF2F2; padding:20px; border-radius:12px; border-left:6px solid #DC2626; min-height:260px; margin-bottom:20px;'>
-                    <h3 style='color:#DC2626; margin-top:0;'>🔥 ตัวเลือก 2: เลขแข็งแกร่งสะสม (Chi-Square Anomaly Model)</h3>
-                    <p style='color:#4B5563; font-size:14px;'>วิเคราะห์หา <b>ความผิดปกติเชิงบวก</b> คัดเฉพาะตัวเลขที่ทำสถิติออกถล่มทลาย บ่อยครั้งกว่าค่าเฉลี่ยสุ่มมาตรฐานอย่างมีนัยสำคัญตลอด 30 ปี (เลขเด่นตลอดกาล)</p>
-                    <h4 style='color:#991B1B; margin-bottom:5px;'>🔝 อันดับตัวเลขแนะนำสูงสุด:</h4>
-                    <p style='font-size:16px; font-weight:bold; color:#7F1D1D;'>{', '.join(top_chisq)}</p>
-                </div>""", unsafe_allow_html=True)
-
-            with c2:
-                st.markdown(f"""<div style='background-color:#EFF6FF; padding:20px; border-radius:12px; border-left:6px solid #2563EB; min-height:260px; margin-bottom:20px;'>
-                    <h3 style='color:#2563EB; margin-top:0;'>🔮 ตัวเลือก 3: อัตราเร่งงวดถัดไป (Poisson Distribution Model)</h3>
-                    <p style='color:#4B5563; font-size:14px;'>คำนวณฟังก์ชันความหนาแน่นความน่าจะเป็นว่า เลขหมวด <b>{formula_cat}</b> ตัวใดที่มีน้ำหนักหน่วยเวลาสุกงอมที่สุด และมีเปอร์เซ็นต์ที่จะยอมหมุนออกมาในงวดหน้าสูงสุด</p>
-                    <h4 style='color:#1E40AF; margin-bottom:5px;'>🔝 อันดับตัวเลขแนะนำสูงสุด:</h4>
-                    <p style='font-size:16px; font-weight:bold; color:#1E3A8A;'>{', '.join(top_poisson)}</p>
-                </div>""", unsafe_allow_html=True)
-                
-                # 🛠️ จุดที่แก้ไข: เพิ่มตัว 'f' ที่หน้าเครื่องหมายคำพูดเรียบร้อยแล้ว
-                st.markdown(f"""<div style='background-color:#FFFBEB; padding:20px; border-radius:12px; border-left:6px solid #D97706; min-height:260px; margin-bottom:20px;'>
-                    <h3 style='color:#D97706; margin-top:0;'>❄️ ตัวเลือก 4: ดีดกลับสู่สมดุล (Regression to the Mean Model)</h3>
-                    <p style='color:#4B5563; font-size:14px;'>ใช้กฎของจำนวนมากคัดเลขที่มีค่า <b>Overdue Index สูงสุด</b> หรือกลุ่มตัวเลขที่ค้างเติ่งไม่ยอมออกยาวนานที่สุดในระบบ เพื่อรอจังหวะดีดตัวกลับมารักษาค่าเฉลี่ยรอบวงโคจร</p>
-                    <h4 style='color:#92400E; margin-bottom:5px;'>🔝 อันดับตัวเลขแนะนำสูงสุด:</h4>
-                    <p style='font-size:16px; font-weight:bold; color:#78350F;'>{', '.join(top_regression)}</p>
+            with row1_c2:
+                st.markdown(f"""<div style="background-color:#FEF2F2; padding:20px; border-radius:12px; border-left:6px solid #DC2626; min-height:220px; margin-bottom:20px;">
+                    <h3 style="color:#DC2626; margin-top:0;">🔥 ตัวเลือก 2: เลขแข็งแกร่งสะสม (Chi-Square Anomaly)</h3>
+                    <p style="color:#4B5563; font-size:14px;">ค้นหาค่าความเบี่ยงเบนเชิงบวกของตัวเลขที่ทำสถิติออกถล่มทลายบ่อยครั้งกว่าค่าเฉลี่ยสุ่มมาตรฐานอย่างมีนัยสำคัญ (เลขเด่นตลอดกาล)</p>
+                    <h4 style="color:#991B1B; margin-bottom:5px;">🔝 อันดับแนะนำสูงสุด:</h4>
+                    <p style="font-size:16px; font-weight:bold; color:#7F1D1D;">{', '.join(top_chisq)}</p>
                 </div>""", unsafe_allow_html=True)
 
-            # ตารางรวม Metrics วิเคราะห์พารามิเตอร์ทั้งหมด
+            # แถวที่ 2
+            row2_c1, row2_c2 = st.columns(2)
+            with row2_c1:
+                st.markdown(f"""<div style="background-color:#EFF6FF; padding:20px; border-radius:12px; border-left:6px solid #2563EB; min-height:220px; margin-bottom:20px;">
+                    <h3 style="color:#2563EB; margin-top:0;">🔮 ตัวเลือก 3: อัตราเร่งงวดถัดไป (Poisson Distribution)</h3>
+                    <p style="color:#4B5563; font-size:14px;">คำนวณความหนาแน่นความน่าจะเป็นว่าตัวเลขใดสุกงอมเต็มที่ตามหน่วยเวลา และมีโอกาสจะยอมสุ่มหมุนออกมาในงวดหน้ามากที่สุด</p>
+                    <h4 style="color:#1E40AF; margin-bottom:5px;">🔝 อันดับแนะนำสูงสุด:</h4>
+                    <p style="font-size:16px; font-weight:bold; color:#1E3A8A;">{', '.join(top_poisson)}</p>
+                </div>""", unsafe_allow_html=True)
+            with row2_c2:
+                st.markdown(f"""<div style="background-color:#FFFBEB; padding:20px; border-radius:12px; border-left:6px solid #D97706; min-height:220px; margin-bottom:20px;">
+                    <h3 style="color:#D97706; margin-top:0;">❄️ ตัวเลือก 4: ดีดกลับสู่สมดุล (Regression to the Mean)</h3>
+                    <p style="color:#4B5563; font-size:14px;">ใช้กฎของจำนวนมากกรองตัวเลขที่มีค่าดรรชนีการอั้นค้างสะสมสูงสุดยาวนานที่สุด เพื่อรอจังหวะดีดตัวกลับมารักษาค่าเฉลี่ยสุ่ม</p>
+                    <h4 style="color:#92400E; margin-bottom:5px;">🔝 อันดับแนะนำสูงสุด:</h4>
+                    <p style="font-size:16px; font-weight:bold; color:#78350F;">{', '.join(top_regression)}</p>
+                </div>""", unsafe_allow_html=True)
+
+            # แถวที่ 3 (โมเดลใหม่)
+            row3_c1, row3_c2 = st.columns(2)
+            with row3_c1:
+                st.markdown(f"""<div style="background-color:#FAFAF9; padding:20px; border-radius:12px; border-left:6px solid #78716C; min-height:220px; margin-bottom:20px;">
+                    <h3 style="color:#78716C; margin-top:0;">⛓️ ตัวเลือก 5: ลำดับการเปลี่ยนสถานะ (Markov Chains)</h3>
+                    <p style="color:#4B5563; font-size:14px;">คำนวณ Matrix ความน่าจะเป็นว่า จากงวดล่าสุดที่ออกเลข <b>{str(cat_flat_data.iloc[-1])}</b> ในอดีต 30 ปี วงล้อมักจะเปลี่ยนสถานะเหวี่ยงไปออกเลขใดต่อมากที่สุด</p>
+                    <h4 style="color:#44403C; margin-bottom:5px;">🔝 อันดับแนะนำสูงสุด:</h4>
+                    <p style="font-size:16px; font-weight:bold; color:#1C1917;">{', '.join(top_markov)}</p>
+                </div>""", unsafe_allow_html=True)
+            with row3_c2:
+                st.markdown(f"""<div style="background-color:#F5F3FF; padding:20px; border-radius:12px; border-left:6px solid #7C3AED; min-height:220px; margin-bottom:20px;">
+                    <h3 style="color:#7C3AED; margin-top:0;">📈 ตัวเลือก 6: โมเมนตัมน้ำหนักงวดล่าสุด (EMA Weighting)</h3>
+                    <p style="color:#4B5563; font-size:14px;">ให้ความสำคัญกับปัจจุบันมากกว่าอดีต โดยเพิ่มสัดส่วนคะแนนถ่วงน้ำหนักเร่งความเร็วให้งวดที่อยู่ใกล้เคียงปัจจุบัน เพื่อหาเลขที่กำลังฟอร์มตัวเป็นขาขึ้น</p>
+                    <h4 style="color:#6D28D9; margin-bottom:5px;">🔝 อันดับแนะนำสูงสุด:</h4>
+                    <p style="font-size:16px; font-weight:bold; color:#4C1D95;">{', '.join(top_ema)}</p>
+                </div>""", unsafe_allow_html=True)
+
+            # แถวที่ 4 (โมเดลใหม่)
+            st.markdown(f"""<div style="background-color:#F0FDFA; padding:20px; border-radius:12px; border-left:6px solid #0D9488; min-height:160px; margin-bottom:20px;">
+                <h3 style="color:#0D9488; margin-top:0;">🎯 ตัวเลือก 7: สมดุลผลรวมหลักและพิกัดคู่-คี่ (Digit Sum & Parity Filter)</h3>
+                <p style="color:#4B5563; font-size:14px;">คัดกรองตัวเลขตามกฎ Normal Distribution โดยเลือกเฉพาะตัวเลขที่มีผลรวมแต้มหลัก (เช่น {', '.join([str(s) for s in top_3_sums])}) และโครงสร้างพิกัดรูปแบบ (<b>{most_common_parity}</b>) ที่สถิติประวัติศาสตร์ 30 ปีระบุว่าออกบ่อยที่สุด</p>
+                <h4 style="color:#0F766E; margin-bottom:5px;">🔝 อันดับแนะนำสูงสุด:</h4>
+                <p style="font-size:16px; font-weight:bold; color:#115E59;">{', '.join(top_balanced)}</p>
+            </div>""", unsafe_allow_html=True)
+
+            # ตารางรวมสรุป Metrics ทั้งหมด 7 อัลกorิธึม
             st.write("---")
             st.subheader(f"📋 แผ่นตารางดัชนีคะแนนรวมสำหรับการตัดสินใจเชิงคณิตศาสตร์ [{formula_cat}]")
             
             summary_rows = []
-            bayes_dict = {item[0]: item[1] for item in bayes_results}
-            poisson_dict = {item[0]: item[1] for item in poisson_results}
-            chisq_dict = {item[0]: item[1] for item in chisq_results}
+            bayes_dict = dict(bayes_results)
+            poisson_dict = dict(poisson_results)
+            chisq_dict = dict(chisq_results)
             regr_dict = {item[0]: item[1] for item in regression_results}
             overdue_dict = {item[0]: item[2] for item in regression_results}
+            ema_dict = dict(ema_results)
             freq_dict = cat_flat_data.value_counts().to_dict()
             
             for num in all_possible_nums:
@@ -313,7 +383,10 @@ else:
                     "ดัชนีสูตรเบย์ (Lift)": round(bayes_dict.get(num, 0), 3),
                     "โอกาสพัวซอง (Probability)": f"{poisson_dict.get(num, 0)*100:.1f}%",
                     "ค่าเบี่ยงเบนไคสแควร์": round(chisq_dict.get(num, 0), 3),
-                    "ดัชนีอั้นสะสม (RTM Index)": round(regr_dict.get(num, 0), 2)
+                    "ดัชนีอั้นสะสม (RTM Index)": round(regr_dict.get(num, 0), 2),
+                    "โมเมนตัม EMA": round(ema_dict.get(num, 0), 4),
+                    "ผลรวมหลัก": get_digit_sum(num),
+                    "พิกัดคู่-คี่": get_parity_pattern(num)
                 })
                 
             st.dataframe(pd.DataFrame(summary_rows).sort_values(by="ออกทั้งหมด (ครั้ง)", ascending=False), use_container_width=True)
