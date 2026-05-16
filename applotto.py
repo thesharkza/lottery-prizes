@@ -30,13 +30,14 @@ def fetch_and_save_latest_lotto():
             response_data = data["response"]
             
             draw_date_str = response_data.get("date") 
-            prizes = response_data.get("prizes",)
-            running_numbers = response_data.get("runningNumbers",)
+            prizes = response_data.get("prizes", [])
+            running_numbers = response_data.get("runningNumbers", [])
             
-            first_prize = prizes["number"] if len(prizes) > 0 else
-            three_front = running_numbers["number"] if len(running_numbers) > 0 else
-            three_last = running_numbers[1]["number"] if len(running_numbers) > 1 else
-            two_bottom = running_numbers[2]["number"] if len(running_numbers) > 2 else
+            # ค้นหารางวัลอย่างปลอดภัยโดยใช้ 'id' ป้องกันความผิดพลาดของข้อมูล
+            first_prize = next((item["number"] for item in prizes if item.get("id") == "prize1"), "-")
+            three_front = next((item["number"] for item in running_numbers if item.get("id") == "front3"), "-")
+            three_last = next((item["number"] for item in running_numbers if item.get("id") == "last3"), "-")
+            two_bottom = next((item["number"] for item in running_numbers if item.get("id") == "last2"), "-")
 
             document = {
                 "draw_date_str": draw_date_str,
