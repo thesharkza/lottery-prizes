@@ -3,3 +3,4 @@ pandas
 certifi
 requests
 streamlit
+numpy
