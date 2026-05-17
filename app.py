@@ -203,7 +203,22 @@ else:
             for idx, val in enumerate(cat_flat_data):
                 last_seen_idx[str(val)] = idx
                 
-            # สร้างระบบนับคะแนนโหวต (Consensus Voting System) - เต็มก้อนละ 10 แต้มสำหรับที่ 1
+            # 🌟 🛠️ โครงสร้างเซฟตี้แบบใหม่: ประกาศตัวแปรพจนานุกรมส่วนกลางป้องกัน IndexError 🌟
+            scoring_data = {}
+            for num in all_possible_nums:
+                last_idx = last_seen_idx.get(num, -1)
+                cur_overdue = total_items_count - 1 - last_idx if last_idx != -1 else total_items_count
+                scoring_data[num] = {
+                    "freq": cat_flat_data.value_counts().get(num, 0),
+                    "overdue_draws": cur_overdue,
+                    "bayes_lift": 0.0,
+                    "poisson_prob": 0.0,
+                    "chisq_contrib": 0.0,
+                    "overdue_index": 0.0,
+                    "ema_momentum": 0.0,
+                    "voting_score": 0
+                }
+            
             voting_scores = {n: 0 for n in all_possible_nums}
             
             # --- 1. สูตรเบย์ ---
@@ -212,23 +227,24 @@ else:
             total_m_items = len(m_flat)
             bayes_results = []
             for num in all_possible_nums:
-                p_num = cat_flat_data.value_counts().get(num, 0) / total_items_count if total_items_count > 0 else 0
+                p_num = scoring_data[num]["freq"] / total_items_count if total_items_count > 0 else 0
                 p_num_given_m = m_flat.value_counts().get(num, 0) / total_m_items if total_m_items > 0 else 0
                 lift = (p_num_given_m / p_num) if p_num > 0 else 0
+                scoring_data[num]["bayes_lift"] = lift
                 bayes_results.append((num, lift))
             bayes_results.sort(key=lambda x: x[1], reverse=True)
             top_bayes = [f"{item[0]} (x{item[1]:.2f})" for item in bayes_results[:3]]
             for rank, item in enumerate(bayes_results[:10]):
-                voting_scores[item[0]] += (10 - rank) # อันดับ 1 ได้ 10 คะแนน, อันดับ 10 ได้ 1 คะแนน
+                voting_scores[item[0]] += (10 - rank)
 
             # --- 2. สูตรพัวซอง ---
             poisson_results = []
             for num in all_possible_nums:
-                occurrences = cat_flat_data.value_counts().get(num, 0)
+                occurrences = scoring_data[num]["freq"]
                 lam = occurrences / total_items_count if total_items_count > 0 else 0
-                last_idx = last_seen_idx.get(num, -1)
-                overdue_draws = total_items_count - 1 - last_idx if last_idx != -1 else total_items_count
+                overdue_draws = scoring_data[num]["overdue_draws"]
                 prob_to_appear = 1.0 - math.exp(-lam * (overdue_draws + 1)) if lam > 0 else 0
+                scoring_data[num]["poisson_prob"] = prob_to_appear
                 poisson_results.append((num, prob_to_appear))
             poisson_results.sort(key=lambda x: x[1], reverse=True)
             top_poisson = [f"{item[0]} ({item[1]*100:.1f}%)" for item in poisson_results[:3]]
@@ -239,9 +255,11 @@ else:
             expected_freq = total_items_count / total_possible_types
             chisq_results = []
             for num in all_possible_nums:
-                observed_freq = cat_flat_data.value_counts().get(num, 0)
+                observed_freq = scoring_data[num]["freq"]
                 chisq_contrib = ((observed_freq - expected_freq) ** 2) / expected_freq if expected_freq > 0 else 0
-                chisq_results.append((num, chisq_contrib if observed_freq > expected_freq else 0))
+                actual_contrib = chisq_contrib if observed_freq > expected_freq else 0
+                scoring_data[num]["chisq_contrib"] = actual_contrib
+                chisq_results.append((num, actual_contrib))
             chisq_results.sort(key=lambda x: x[1], reverse=True)
             top_chisq = [f"{item[0]} (เด่น: {item[1]:.2f})" for item in chisq_results[:3]]
             for rank, item in enumerate(chisq_results[:10]):
@@ -251,9 +269,9 @@ else:
             regression_results = []
             theoretical_period = total_possible_types
             for num in all_possible_nums:
-                last_idx = last_seen_idx.get(num, -1)
-                overdue_draws = total_items_count - 1 - last_idx if last_idx != -1 else total_items_count
+                overdue_draws = scoring_data[num]["overdue_draws"]
                 overdue_index = overdue_draws / theoretical_period
+                scoring_data[num]["overdue_index"] = overdue_index
                 regression_results.append((num, overdue_index))
             regression_results.sort(key=lambda x: x[1], reverse=True)
             top_regression = [f"{item[0]} ({item[1]:.2f} เท่า)" for item in regression_results[:3]]
@@ -284,6 +302,8 @@ else:
                 if v_str in ema_scores:
                     dist = total_items_count - 1 - idx
                     ema_scores[v_str] += alpha_decay * ((1 - alpha_decay) ** dist)
+            for num, score in ema_scores.items():
+                scoring_data[num]["ema_momentum"] = score
             ema_results = sorted(ema_scores.items(), key=lambda x: x[1], reverse=True)
             top_ema = [f"{item[0]} ({item[1]:.3f})" for item in ema_results[:3]]
             for rank, item in enumerate(ema_results[:10]):
@@ -303,19 +323,18 @@ else:
             balanced_nums = []
             for num in all_possible_nums:
                 if get_digit_sum(num) in top_3_sums and get_parity_pattern(num) == most_common_parity:
-                    balanced_nums.append((num, cat_flat_data.value_counts().get(num, 0)))
+                    balanced_nums.append((num, scoring_data[num]["freq"]))
             balanced_nums.sort(key=lambda x: x[1], reverse=True)
             top_balanced = [f"{item[0]}" for item in balanced_nums[:3]]
             for rank, item in enumerate(balanced_nums[:10]):
                 voting_scores[item[0]] += (10 - rank)
 
-            # --- 🌟 ส่วนการประมวลผลระบบมติเอกฉันท์รวม (Consensus Winner) 🌟 ---
+            # --- ส่วนการประมวลผลระบบมติเอกฉันท์รวม ---
             consensus_results = sorted(voting_scores.items(), key=lambda x: x[1], reverse=True)
             top_master_consensus = [f"🎯 {item[0]} (คะแนนโหวตรวม: {item[1]} แต้ม)" for item in consensus_results[:5]]
 
             # ---------------- DISPLAY UI ----------------
             st.write("---")
-            # โชว์ป้ายประกาศ Master Consensus ตัวใหญ่สุดยอดไว้บนสุดแผงตัดสินใจ
             st.markdown(f"""<div style="background-color:#F8FAFC; padding:25px; border-radius:15px; border:3px solid #334155; text-align:center; margin-bottom:30px;">
                 <h2 style="color:#0F172A; margin-top:0; font-size:28px;">🎯 มติเอกฉันท์สูงสุดผสานพลัง 7 โมเดล (Ensemble Consensus Model)</h2>
                 <p style="color:#475569; font-size:15px; max-w:800px; margin:0 auto 15px auto;">นี่คือตัวเลือกที่มีคะแนนวิเคราะห์รวมสูงสุดจากระบบโหวตสถิติ โดยรวบรวมตัวเลขที่กรรมการทั้ง 7 สูตรคณิตศาสตร์ (Bayes, Poisson, Chi-Sq, Regression, Markov, EMA, Balanced) เห็นพ้องต้องกันว่ามีโครงสร้างสถิติสมบูรณ์ที่สุดสำหรับหมวด <b>{formula_cat}</b></p>
@@ -388,30 +407,21 @@ else:
             st.subheader(f"📋 แผ่นตารางดัชนีคะแนนรวมสำหรับการตัดสินใจเชิงคณิตศาสตร์ [{formula_cat}]")
             
             summary_rows = []
-            bayes_dict = dict(bayes_results)
-            poisson_dict = dict(poisson_results)
-            chisq_dict = dict(chisq_results)
-            regr_dict = dict(regression_results)
-            overdue_dict = {item[0]: item[2] for item in regression_results}
-            ema_dict = dict(ema_results)
-            freq_dict = cat_flat_data.value_counts().to_dict()
-            
             for num in all_possible_nums:
                 summary_rows.append({
                     "ตัวเลข": num,
                     "คะแนนโหวตรวม (Consensus)": voting_scores.get(num, 0),
-                    "ออกทั้งหมด (ครั้ง)": freq_dict.get(num, 0),
-                    "ค้างปัจจุบัน (งวด)": overdue_dict.get(num, 0),
-                    "ดัชนีสูตรเบย์ (Lift)": round(bayes_dict.get(num, 0), 3),
-                    "โอกาสพัวซอง (Probability)": f"{poisson_dict.get(num, 0)*100:.1f}%",
-                    "ค่าเบี่ยงเบนไคสแควร์": round(chisq_dict.get(num, 0), 3),
-                    "ดัชนีอั้นสะสม (RTM Index)": round(regr_dict.get(num, 0), 2),
-                    "โมเมนตัม EMA": round(ema_dict.get(num, 0), 4),
+                    "ออกทั้งหมด (ครั้ง)": scoring_data[num]["freq"],
+                    "ค้างปัจจุบัน (งวด)": scoring_data[num]["overdue_draws"],
+                    "ดัชนีสูตรเบย์ (Lift)": round(scoring_data[num]["bayes_lift"], 3),
+                    "โอกาสพัวซอง (Probability)": f"{scoring_data[num]['poisson_prob']*100:.1f}%",
+                    "ค่าเบี่ยงเบนไคสแควร์": round(scoring_data[num]["chisq_contrib"], 3),
+                    "ดัชนีอั้นสะสม (RTM Index)": round(scoring_data[num]["overdue_index"], 2),
+                    "โมเมนตัม EMA": round(scoring_data[num]["ema_momentum"], 4),
                     "ผลรวมหลัก": get_digit_sum(num),
                     "พิกัดคู่-คี่": get_parity_pattern(num)
                 })
                 
-            # เรียงตารางตามคะแนนโหวตมติเอกฉันท์จากมากไปน้อย เพื่อให้ง่ายต่อการดูภาพรวม
             st.dataframe(pd.DataFrame(summary_rows).sort_values(by="คะแนนโหวตรวม (Consensus)", ascending=False), use_container_width=True)
         else:
             st.info("กำลังเตรียมโมเดลคำนวณข้อมูล...")
