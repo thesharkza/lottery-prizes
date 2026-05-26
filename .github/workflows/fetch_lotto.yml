@@ -1,0 +1,37 @@
+name: Fetch Latest Lottery Result
+
+on:
+  schedule:
+    # รันทุกชั่วโมง ตั้งแต่ 16:00 - 22:00 ของวันที่ 1 และ 16 ของทุกเดือน
+    # (UTC = ไทย - 7 ชั่วโมง) → ไทย 16:00-22:00 = UTC 09:00-15:00
+    # ผลสลากออกประมาณ 14:30-15:00 ตามเวลาไทย → UTC 07:30-08:00
+    # ดังนั้นเริ่มดึงตั้งแต่ UTC 08:00 ของวันที่ 1 และ 16
+    - cron: '0 8-15 1,16 * *'
+    # backup: รันอีกครั้งเช้าวันถัดไป เผื่อผลออกช้า
+    - cron: '0 1 2,17 * *'
+  workflow_dispatch:  # ให้รันด้วยมือได้
+
+jobs:
+  fetch-lotto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run fetch script
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+        run: python applotto.py
