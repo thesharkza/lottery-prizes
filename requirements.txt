@@ -1,6 +1,7 @@
-pymongo[srv]
-pandas
-certifi
-requests
 streamlit
+pymongo
+certifi
+pandas
 numpy
+requests
+plotly
