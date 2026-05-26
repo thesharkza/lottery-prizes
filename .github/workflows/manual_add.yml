@@ -1,0 +1,35 @@
+name: Manual Add Missing Draws
+
+# ⚙️ Workflow รันด้วยมือสำหรับเพิ่มงวดที่ขาดเข้า MongoDB
+# วิธีใช้:
+#   1. แก้ DRAWS_TO_ADD ใน manual_add.py (ใส่ข้อมูลงวดที่ต้องการเพิ่ม)
+#   2. Commit + Push
+#   3. ไปที่ Actions → "Manual Add Missing Draws" → Run workflow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  manual-add:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run manual add script
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+        run: python manual_add.py
